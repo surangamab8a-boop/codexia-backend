@@ -2,30 +2,36 @@ from flask import Flask, request, jsonify
 from flask_cors import CORS
 from openai import OpenAI
 import os
+import json
 
 app = Flask(__name__)
 CORS(app)
 
 client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
 
+@app.route("/")
+def home():
+    return "Codexia backend running"
+
 @app.route("/analyze", methods=["POST"])
 def analyze():
-    code = request.json.get("code", "")
+    data = request.get_json()
+    code = data.get("code", "")
 
     if not code.strip():
         return jsonify({"error": "No code provided"}), 400
 
     prompt = f"""
-You are a static code analysis tool.
-Analyze the following code and respond ONLY in valid JSON.
+Analyze the following code and respond ONLY with valid JSON.
+Do NOT include markdown, backticks, or explanations.
 
-Return this exact structure:
+Return exactly this structure:
 {{
-  "language": "...",
-  "issue": "...",
-  "lines": "...",
-  "impact": "...",
-  "suggestion": "...",
+  "language": "string",
+  "issue": "string",
+  "lines": "string",
+  "impact": "string",
+  "suggestion": "string",
   "line_number": number
 }}
 
@@ -33,25 +39,26 @@ Code:
 {code}
 """
 
-    response = client.chat.completions.create(
-        model="gpt-4.1-mini",
-        messages=[{"role": "user", "content": prompt}],
-        temperature=0
-    )
-
-    ai_output = response.choices[0].message.content
-
     try:
-        return jsonify(eval(ai_output))
-    except:
+        response = client.responses.create(
+            model="gpt-4.1-mini",
+            input=prompt
+        )
+
+        ai_text = response.output_text.strip()
+
+        parsed = json.loads(ai_text)  # ✅ SAFE
+        return jsonify(parsed)
+
+    except Exception as e:
         return jsonify({
             "language": "Unknown",
-            "issue": "AI parsing failed",
+            "issue": "Backend or AI failure",
             "lines": "N/A",
             "impact": "Low",
-            "suggestion": "Try simpler code",
+            "suggestion": str(e),
             "line_number": None
-        })
+        }), 200
 
 if __name__ == "__main__":
     app.run()
